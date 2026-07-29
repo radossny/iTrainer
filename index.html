@@ -57,8 +57,13 @@ h2{font-size:15px;font-weight:600;margin:2px 0 0;letter-spacing:-.01em;
 .doc p.t{font-weight:600;font-size:13px}
 
 .drop{border:1.5px dashed var(--slate);padding:26px 16px;text-align:center;
-  background:#fff;cursor:pointer;margin:14px 0}
+  background:#fff;cursor:pointer;margin:14px 0;display:block}
 .drop.over{border-color:var(--blue);background:#F2F6FA}
+.drop:focus-within{outline:2px solid var(--blue);outline-offset:2px}
+/* input musi zostać w drzewie layoutu — display:none blokuje okno wyboru
+   plików w części przeglądarek, zwłaszcza na iOS */
+.vh{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .chip{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 6px;
   border:1px solid var(--hair);margin:0 4px 4px 0}
 
@@ -123,15 +128,15 @@ input[type=range]{width:180px;accent-color:#17395C}
 </header>
 
 <main class="wrap">
-  <div class="drop" id="drop" tabindex="0" role="button"
-       aria-label="Wczytaj pliki CSV z Vital2AI">
-    <div class="mono" style="font-size:13px;margin-bottom:6px">Upuść pliki CSV z Vital2AI</div>
+  <label class="drop" id="drop" for="file">
+    <div class="mono" style="font-size:13px;margin-bottom:6px">Kliknij albo upuść pliki CSV</div>
     <div style="font-size:12px;color:var(--slate)">
-      HealthData i Workouts, dowolna liczba eksportów naraz. Typ rozpoznawany po nagłówkach.
+      HealthData i Workouts z Vital2AI, dowolna liczba eksportów naraz.
+      Typ rozpoznawany po nagłówkach.
     </div>
-    <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
+    <input type="file" id="file" multiple class="vh">
     <div id="files" style="margin-top:12px"></div>
-  </div>
+  </label>
 
   <div id="err" hidden></div>
   <div id="app"><p class="empty">Po wczytaniu pojawi się kalibracja, raport jakości i wskaźniki.</p></div>

@@ -21,22 +21,51 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) =>
 
 /* ===== wczytywanie ================================================== */
 
+/**
+ * Scala rekordy dzienne pole po polu zamiast nadpisywać cały wiersz.
+ * Gdy zakresy dwóch eksportów zachodzą na siebie, nowsza pusta komórka
+ * nie może skasować wartości zapisanej wcześniej.
+ */
+async function mergeDaily(rows) {
+  const existing = new Map((await db.getAll("daily")).map((r) => [r.date, r]));
+  const merged = rows.map((r) => {
+    const old = existing.get(r.date);
+    if (!old) return r;
+    const out = { ...old };
+    for (const [k, v] of Object.entries(r)) if (v !== "" && v != null) out[k] = v;
+    return out;
+  });
+  return db.bulkPut("daily", merged);
+}
+
+async function readFile(file) {
+  // file.text() nie istnieje w starszych Safari — stąd zapasowa ścieżka
+  if (typeof file.text === "function") return file.text();
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result));
+    r.onerror = () => rej(r.error || new Error("nie udało się odczytać pliku"));
+    r.readAsText(file, "utf-8");
+  });
+}
+
 async function ingestFiles(fileList) {
   $("#err").hidden = true;
-  for (const file of fileList) {
-    if (!/\.csv$/i.test(file.name)) continue;
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+
+  for (const file of files) {
     try {
-      const { header, rows } = parseCsv(await file.text());
+      const { header, rows } = parseCsv(await readFile(file));
       const kind = detectKind(header);
       if (kind === "workouts") {
         await db.bulkPut("workouts", parseWorkouts(rows).workouts);
         state.files.push({ name: file.name, kind: "treningi", n: rows.length });
       } else if (kind === "daily") {
-        const merged = rows.map((r) => ({ ...r, date: r.date }));
-        await db.bulkPut("daily", merged);
+        await mergeDaily(rows);
         state.files.push({ name: file.name, kind: "zdrowie", n: rows.length });
       } else {
-        showErr(`${file.name}: nie rozpoznano formatu. Oczekiwana kolumna „date” albo „startDate”.`);
+        showErr(`${file.name}: nie rozpoznano formatu. Oczekiwana kolumna „date” albo „startDate”. Znalezione nagłówki: ${header.slice(0, 5).join(", ")}…`);
         continue;
       }
       await db.put("imports", {
@@ -319,15 +348,34 @@ function backupPanel() {
 /* ===== zdarzenia ==================================================== */
 
 const drop = $("#drop"), fileInput = $("#file");
-drop.addEventListener("click", () => fileInput.click());
-drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
+
+// Bez własnego handlera na kliknięcie: <label for="file"> otwiera okno wyboru
+// natywnie. Wcześniejsze drop.click() → fileInput.click() zapętlało się,
+// bo input leży wewnątrz strefy i zdarzenie wracało do tego samego handlera.
+
+// Przeglądarka domyślnie otwiera upuszczony plik zamiast oddać go stronie.
+// Bez tej blokady CSV upuszczony obok strefy ląduje w Excelu.
+["dragover", "drop"].forEach((ev) =>
+  window.addEventListener(ev, (e) => e.preventDefault(), false));
+
+drop.addEventListener("dragenter", (e) => { e.preventDefault(); drop.classList.add("over"); });
 drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
-drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("dragleave", (e) => {
+  if (!drop.contains(e.relatedTarget)) drop.classList.remove("over");
+});
 drop.addEventListener("drop", (e) => {
-  e.preventDefault(); drop.classList.remove("over");
+  e.preventDefault(); e.stopPropagation();
+  drop.classList.remove("over");
   ingestFiles(e.dataTransfer.files);
 });
-fileInput.addEventListener("change", (e) => ingestFiles(e.target.files));
+
+fileInput.addEventListener("change", (e) => {
+  // Lista plików musi zostać skopiowana ZANIM wyczyścimy input —
+  // ustawienie value="" opróżnia FileList w przeglądarce.
+  const files = Array.from(e.target.files || []);
+  e.target.value = ""; // pozwala wgrać ten sam plik ponownie
+  ingestFiles(files);
+});
 
 $("#app").addEventListener("click", async (e) => {
   const t = e.target.closest("[data-doc],[data-metric],[data-band],[data-adjust],[data-hrmax],[data-act]");
