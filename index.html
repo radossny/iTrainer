@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0E1418">
+<title>iTrainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#E7EAEC; --paper2:#DDE2E5; --ink:#0E1418; --slate:#4A5860;
+  --seam:#17395C; --blue:#2E6FA8; --flag:#B23A26; --ok:#2C6B57;
+  --warn:#9A6B12; --hair:#C3CBD0;
+  --sans:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-text-size-adjust:100%}
+.mono{font-family:var(--mono)}
+.eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--slate)}
+.wrap{padding:0 16px 48px;max-width:960px;margin:0 auto}
+
+header.top{background:var(--ink);color:var(--paper);padding:20px 16px}
+header.top .in{max-width:960px;margin:0 auto}
+header.top h1{font-size:21px;font-weight:700;letter-spacing:-.02em;margin:6px 0 8px}
+header.top p{font-size:12.5px;color:#B6C4CC;margin:0;max-width:640px;line-height:1.55}
+.stat{font-family:var(--mono);font-size:11px;color:#8FA3AF;margin-top:12px;
+  display:flex;gap:16px;flex-wrap:wrap}
+
+.panel{border:1px solid var(--hair);background:#fff;margin:14px 0}
+.panel.key{border:2px solid var(--ink)}
+.panel-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  padding:11px 14px;border-bottom:1px solid var(--hair);background:var(--paper2);flex-wrap:wrap}
+.panel.key>.panel-h{background:var(--ink)}
+.panel.key>.panel-h h2{color:var(--paper)}
+.panel.key>.panel-h .eyebrow{color:#8FA3AF}
+.panel-b{padding:14px}
+h2{font-size:15px;font-weight:600;margin:2px 0 0;letter-spacing:-.01em;
+  display:flex;align-items:center;gap:7px}
+.hint{font-size:12.5px;color:var(--slate);margin:0 0 12px;line-height:1.5;max-width:640px}
+
+.ibtn{width:17px;height:17px;border-radius:50%;border:1px solid currentColor;
+  background:transparent;color:var(--slate);font-family:var(--mono);font-size:10px;
+  font-weight:600;line-height:1;cursor:pointer;padding:0;flex:none;
+  display:inline-flex;align-items:center;justify-content:center}
+.panel.key .ibtn{color:#8FA3AF}
+.ibtn[aria-expanded="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.ibtn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.doc{border-left:3px solid var(--ink);background:#F5F7F8;padding:11px 13px;margin:0 0 14px}
+.doc p{font-size:12.5px;line-height:1.55;margin:0 0 8px;color:#232C32}
+.doc p:last-child{margin:0}
+.doc p.t{font-weight:600;font-size:13px}
+
+.drop{border:1.5px dashed var(--slate);padding:26px 16px;text-align:center;
+  background:#fff;cursor:pointer;margin:14px 0}
+.drop.over{border-color:var(--blue);background:#F2F6FA}
+.chip{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 6px;
+  border:1px solid var(--hair);margin:0 4px 4px 0}
+
+.flagrow{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--hair);align-items:flex-start}
+.flagrow:last-child{border-bottom:0}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+.flagrow b{font-weight:600;font-size:13px}
+.flagrow div>span{display:block;color:var(--slate);font-size:12.5px;margin-top:2px;line-height:1.45}
+
+.ledger{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:1px;
+  background:var(--hair);border:1px solid var(--hair)}
+.cell{background:#fff;padding:6px 7px 7px;cursor:pointer;border:0;text-align:left;
+  font:inherit;color:inherit;display:block;width:100%}
+.cell:hover{background:var(--paper2)}
+.cell[aria-pressed="true"]{background:var(--ink)}
+.cell[aria-pressed="true"] .cname,.cell[aria-pressed="true"] .cmeta{color:var(--paper)}
+.cname{font-family:var(--mono);font-size:9.5px;line-height:1.25;word-break:break-all;
+  display:block;min-height:24px}
+.cell.dead .cname{color:#9AA6AD;text-decoration:line-through}
+.cmeta{font-family:var(--mono);font-size:9px;color:var(--slate);margin-top:3px;display:block}
+.barwrap{height:3px;background:var(--paper2);margin-top:5px}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--slate);text-align:right;padding:6px 8px;border-bottom:1px solid var(--hair);
+  white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+td{padding:5px 8px;border-bottom:1px solid #EDF0F1;text-align:right;font-family:var(--mono)}
+.scroll{max-height:340px;overflow:auto;-webkit-overflow-scrolling:touch}
+
+button.seg{font-family:var(--mono);font-size:11px;padding:4px 9px;border:1px solid var(--hair);
+  background:#fff;cursor:pointer;color:inherit}
+button.seg[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+button.seg:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=number]{font-family:var(--mono);font-size:14px;width:76px;padding:5px 7px;
+  border:1px solid var(--hair);background:#fff}
+input[type=range]{width:180px;accent-color:#17395C}
+.kpi{font-family:var(--mono);font-size:25px;font-weight:600;letter-spacing:-.02em;line-height:1}
+.alert{background:#FCF2F0;border:1px solid #E5C0B8;padding:10px 12px;margin-bottom:12px;
+  font-size:12.5px;line-height:1.5}
+.chart{width:100%;height:auto;display:block}
+.chart .ax{font-family:var(--mono);font-size:11px;fill:#4A5860}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;
+  color:var(--slate);margin-top:8px}
+.legend i{display:inline-block;width:9px;height:9px;margin-right:4px}
+.note{font-family:var(--mono);font-size:10.5px;color:var(--slate);margin-top:8px}
+.empty{font-size:13px;color:var(--slate);text-align:center;padding:28px 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="in">
+    <div class="eyebrow" style="color:#8FA3AF">iTrainer · warstwa 0 i 1</div>
+    <h1>Import i kontrola jakości danych</h1>
+    <p>Wszystko poniżej liczy się bez udziału modelu językowego. Przy każdym wskaźniku
+       jest przycisk „i” z opisem sposobu wyliczenia. Dane zostają w tej przeglądarce
+       i nigdzie nie są wysyłane.</p>
+    <div class="stat" id="stat" hidden></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="drop" id="drop" tabindex="0" role="button"
+       aria-label="Wczytaj pliki CSV z Vital2AI">
+    <div class="mono" style="font-size:13px;margin-bottom:6px">Upuść pliki CSV z Vital2AI</div>
+    <div style="font-size:12px;color:var(--slate)">
+      HealthData i Workouts, dowolna liczba eksportów naraz. Typ rozpoznawany po nagłówkach.
+    </div>
+    <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
+    <div id="files" style="margin-top:12px"></div>
+  </div>
+
+  <div id="err" hidden></div>
+  <div id="app"><p class="empty">Po wczytaniu pojawi się kalibracja, raport jakości i wskaźniki.</p></div>
+</main>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
