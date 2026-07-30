@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0E1418">
+<!-- Dodanie do ekranu głównego na iOS. Nie tylko wygoda: dane witryny w Safari
+     mogą zostać usunięte po około tygodniu nieużywania, a aplikacja z ekranu
+     głównego ma osobny, trwalszy magazyn. Cała baza siedzi w IndexedDB. -->
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="iTrainer">
+<meta name="mobile-web-app-capable" content="yes">
 <title>iTrainer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -175,6 +184,6 @@ input[type=range]{width:180px;accent-color:#17395C}
     }, 2500);
   });
 </script>
-<script type="module" src="./app.js?v=8"></script>
+<script type="module" src="./app.js?v=9"></script>
 </body>
 </html>

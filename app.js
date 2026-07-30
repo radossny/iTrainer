@@ -1,14 +1,14 @@
-import { parseCsv, detectKind, num } from "./lib/csv.js?v=8";
-import * as db from "./lib/db.js?v=8";
-import { comboChart, lineChart, stackChart } from "./lib/chart.js?v=8";
-import { DOCS } from "./docs.js?v=8";
+import { parseCsv, detectKind, num } from "./lib/csv.js?v=9";
+import * as db from "./lib/db.js?v=9";
+import { comboChart, lineChart, stackChart } from "./lib/chart.js?v=9";
+import { DOCS } from "./docs.js?v=9";
 import {
   detectActiveMetrics, parseWorkouts, buildDailyLoad, weeklyLoad, hrrZones,
   baseline, calibrate, paceAtHr, intensitySplit, qualityReport, fmtPace,
-} from "./compute/metrics.js?v=8";
+} from "./compute/metrics.js?v=9";
 import {
   matchPlan, nextSession, weekOf, planSummary, checkRules, KIND_LABEL, KIND_COLOR,
-} from "./compute/plan.js?v=8";
+} from "./compute/plan.js?v=9";
 
 window.__itrainerBooted = true; // wyłącza ostrzeżenie o niewczytanym kodzie
 
@@ -16,7 +16,7 @@ window.__itrainerBooted = true; // wyłącza ostrzeżenie o niewczytanym kodzie
 // widać, czy przeglądarka wykonuje aktualną wersję, czy wersję z cache.
 // JEDNO źródło prawdy o wersji. Musi być zgodne z ?v=N we wszystkich importach
 // oraz w index.html — ten sam plik z różnym ?v= to dwa osobne moduły z osobnym stanem.
-export const VERSION = "8";
+export const VERSION = "9";
 
 const AGE = 41; // do wzoru 220 − wiek; docelowo z profilu użytkownika
 
