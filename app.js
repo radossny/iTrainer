@@ -7,6 +7,8 @@ import {
   baseline, calibrate, paceAtHr, intensitySplit, qualityReport, fmtPace,
 } from "./compute/index.js";
 
+window.__itrainerBooted = true; // wyłącza ostrzeżenie o niewczytanym kodzie
+
 const AGE = 41; // do wzoru 220 − wiek; docelowo z profilu użytkownika
 
 const state = {
@@ -19,24 +21,14 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-/* ===== wczytywanie ================================================== */
+// Bez tego każda awaria kończy się objawem „nic się nie dzieje”.
+// Wszystko, co pójdzie nie tak, ma wylądować na ekranie.
+window.addEventListener("error", (e) =>
+  showErr(`Błąd: ${e.message}${e.filename ? ` (${e.filename.split("/").pop()}:${e.lineno})` : ""}`));
+window.addEventListener("unhandledrejection", (e) =>
+  showErr(`Błąd: ${e.reason?.message || e.reason}`));
 
-/**
- * Scala rekordy dzienne pole po polu zamiast nadpisywać cały wiersz.
- * Gdy zakresy dwóch eksportów zachodzą na siebie, nowsza pusta komórka
- * nie może skasować wartości zapisanej wcześniej.
- */
-async function mergeDaily(rows) {
-  const existing = new Map((await db.getAll("daily")).map((r) => [r.date, r]));
-  const merged = rows.map((r) => {
-    const old = existing.get(r.date);
-    if (!old) return r;
-    const out = { ...old };
-    for (const [k, v] of Object.entries(r)) if (v !== "" && v != null) out[k] = v;
-    return out;
-  });
-  return db.bulkPut("daily", merged);
-}
+/* ===== wczytywanie ================================================== */
 
 async function readFile(file) {
   // file.text() nie istnieje w starszych Safari — stąd zapasowa ścieżka
@@ -49,50 +41,160 @@ async function readFile(file) {
   });
 }
 
+/**
+ * Import: najpierw stan i widok, dopiero potem zapis do bazy.
+ * Gdyby baza zawiodła — a na iOS potrafi — aplikacja i tak pokazuje wynik.
+ * Persystencja jest usługą, nie warunkiem działania.
+ */
 async function ingestFiles(fileList) {
-  $("#err").hidden = true;
   const files = Array.from(fileList || []);
   if (!files.length) return;
 
-  for (const file of files) {
-    try {
-      const { header, rows } = parseCsv(await readFile(file));
-      const kind = detectKind(header);
-      if (kind === "workouts") {
-        await db.bulkPut("workouts", parseWorkouts(rows).workouts);
-        state.files.push({ name: file.name, kind: "treningi", n: rows.length });
-      } else if (kind === "daily") {
-        await mergeDaily(rows);
-        state.files.push({ name: file.name, kind: "zdrowie", n: rows.length });
-      } else {
-        showErr(`${file.name}: nie rozpoznano formatu. Oczekiwana kolumna „date” albo „startDate”. Znalezione nagłówki: ${header.slice(0, 5).join(", ")}…`);
+  $("#err").hidden = true;
+  setBusy(`Wczytuję ${files.length} ${files.length === 1 ? "plik" : "pliki"}…`);
+  const errors = [];
+  const toPersist = [];
+
+  try {
+    for (const file of files) {
+      let text;
+      try {
+        text = await readFile(file);
+      } catch (e) {
+        errors.push(`${file.name}: nie udało się odczytać pliku (${e.message})`);
         continue;
       }
-      await db.put("imports", {
-        id: `${Date.now()}-${file.name}`, importedAt: new Date().toISOString(),
-        source: "vital2ai", fileName: file.name, rows: rows.length, kind,
-      });
-    } catch (e) {
-      showErr(`${file.name}: ${e.message}`);
+      if (!text || !text.trim()) { errors.push(`${file.name}: plik jest pusty`); continue; }
+
+      let header, rows;
+      try {
+        ({ header, rows } = parseCsv(text));
+      } catch (e) {
+        errors.push(`${file.name}: błąd parsowania (${e.message})`);
+        continue;
+      }
+      if (!rows.length) { errors.push(`${file.name}: brak wierszy danych`); continue; }
+
+      const kind = detectKind(header);
+      if (kind === "workouts") {
+        const { workouts } = parseWorkouts(rows);
+        if (!workouts.length) { errors.push(`${file.name}: nie udało się odczytać żadnej sesji`); continue; }
+        mergeWorkouts(workouts);
+        toPersist.push(["workouts", workouts]);
+        state.files.push({ name: file.name, kind: "treningi", n: workouts.length });
+      } else if (kind === "daily") {
+        const merged = mergeDaily(rows);
+        toPersist.push(["daily", merged]);
+        state.files.push({ name: file.name, kind: "zdrowie", n: rows.length });
+      } else {
+        errors.push(`${file.name}: nie rozpoznano formatu. Oczekiwana kolumna „date” albo „startDate”. Znalezione nagłówki: ${header.slice(0, 4).join(", ")}…`);
+      }
     }
+  } catch (e) {
+    errors.push(`Nieoczekiwany błąd przy wczytywaniu: ${e.message}`);
   }
-  await loadFromDb();
-  render();
+
+  setBusy(null);
+  if (errors.length) showErr(errors.join(" — "));
+
+  // Widok najpierw. Błąd renderowania też musi być widoczny.
+  try {
+    render();
+  } catch (e) {
+    showErr(`Błąd przy budowaniu widoku: ${e.message}`);
+    console.error(e);
+  }
+
+  // Zapis w tle, bez blokowania interfejsu.
+  (async () => {
+    try {
+      for (const [store, rows] of toPersist) await db.bulkPut(store, rows);
+      for (const f of state.files.slice(-files.length)) {
+        await db.put("imports", {
+          id: `${Date.now()}-${f.name}`, importedAt: new Date().toISOString(),
+          source: "vital2ai", fileName: f.name, rows: f.n, kind: f.kind,
+        });
+      }
+    } catch (e) {
+      showErr(`Dane wczytane, ale nie udało się ich zapisać: ${e.message}. Zrób kopię JSON.`);
+    }
+    renderStorageNote();
+  })();
+}
+
+/** Dokłada treningi do stanu, odrzucając duplikaty po import_hash. */
+function mergeWorkouts(list) {
+  const byId = new Map(state.workouts.map((w) => [w.id, w]));
+  for (const w of list) byId.set(w.id, w);
+  state.workouts = [...byId.values()].sort((a, b) => a.startMs - b.startMs);
+}
+
+/**
+ * Scala rekordy dzienne pole po polu zamiast nadpisywać cały wiersz.
+ * Nowsza pusta komórka nie może skasować wartości zapisanej wcześniej.
+ */
+function mergeDaily(rows) {
+  const byDate = new Map(state.daily.map((r) => [r.date, r]));
+  const touched = [];
+  for (const r of rows) {
+    const old = byDate.get(r.date);
+    let out;
+    if (!old) out = { ...r };
+    else {
+      out = { ...old };
+      for (const [k, v] of Object.entries(r)) if (v !== "" && v != null) out[k] = v;
+    }
+    byDate.set(r.date, out);
+    touched.push(out);
+  }
+  state.daily = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  return touched;
+}
+
+function setBusy(msg) {
+  const el = $("#busy");
+  el.hidden = !msg;
+  el.innerHTML = msg ? `<div class="busy">${esc(msg)}</div>` : "";
 }
 
 function showErr(msg) {
   const el = $("#err");
   el.hidden = false;
   el.innerHTML = `<div class="panel" style="border-color:var(--flag)">
-    <div class="panel-b" style="color:var(--flag);font-size:13px">${esc(msg)}</div></div>`;
+    <div class="panel-b" style="color:var(--flag);font-size:13px;line-height:1.5">${esc(msg)}</div></div>`;
+}
+
+/** Ostrzeżenie, gdy baza działa tylko w pamięci — dane znikną po odświeżeniu. */
+function renderStorageNote() {
+  const s = db.status();
+  const el = $("#store");
+  if (s.mode === "memory") {
+    el.hidden = false;
+    el.innerHTML = `<div class="panel" style="border-color:var(--warn)">
+      <div class="panel-b" style="font-size:12.5px;line-height:1.5">
+        <strong>Dane nie zostaną zapamiętane.</strong> Trwały magazyn przeglądarki jest
+        niedostępny (${esc(s.error || "nieznany powód")}). Aplikacja działa normalnie, ale po
+        odświeżeniu strony trzeba będzie wgrać pliki ponownie. Najczęstsza przyczyna:
+        tryb prywatny. Pobierz kopię JSON, jeśli chcesz zachować wynik.</div></div>`;
+  } else el.hidden = true;
 }
 
 async function loadFromDb() {
-  state.daily = (await db.getAll("daily")).sort((a, b) => a.date.localeCompare(b.date));
-  state.workouts = (await db.getAll("workouts")).sort((a, b) => a.startMs - b.startMs);
-  state.hrMax = await db.getSetting("hrMax", null);
-  state.hrRest = await db.getSetting("hrRest", null);
+  try {
+    const [daily, workouts, hrMax, hrRest] = await Promise.all([
+      db.getAll("daily"), db.getAll("workouts"),
+      db.getSetting("hrMax", null), db.getSetting("hrRest", null),
+    ]);
+    if (daily.length) state.daily = daily.sort((a, b) => a.date.localeCompare(b.date));
+    if (workouts.length) state.workouts = workouts.sort((a, b) => a.startMs - b.startMs);
+    state.hrMax = hrMax;
+    state.hrRest = hrRest;
+  } catch (e) {
+    showErr(`Nie udało się odczytać zapisanych danych: ${e.message}`);
+  }
+  renderStorageNote();
 }
+
 
 /* ===== składanie widoku ============================================= */
 
@@ -159,6 +261,7 @@ function render() {
     `HR spocz.: ${d.hrRest}`,
   ].map((s) => `<span>${esc(s)}</span>`).join("");
 
+  renderStorageNote();
   $("#app").innerHTML = [
     calibPanel(d), qualityPanel(d), ledgerPanel(d), loadPanel(d),
     vitalsPanel(d), intensityPanel(d), pacePanel(d), tablePanel(d), backupPanel(),
@@ -428,4 +531,6 @@ async function doExport() {
 
 /* ===== start ======================================================== */
 
-loadFromDb().then(render).catch((e) => showErr(`Nie udało się otworzyć bazy: ${e.message}`));
+loadFromDb()
+  .then(() => { try { render(); } catch (e) { showErr(`Błąd widoku: ${e.message}`); console.error(e); } })
+  .catch((e) => showErr(`Nie udało się otworzyć bazy: ${e.message}`));
