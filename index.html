@@ -64,6 +64,8 @@ h2{font-size:15px;font-weight:600;margin:2px 0 0;letter-spacing:-.01em;
    plików w części przeglądarek, zwłaszcza na iOS */
 .vh{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
   clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.ver{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--slate);text-align:right;padding:6px 0 0}
 .busy{border:1px solid var(--hair);background:#fff;padding:12px 14px;margin:14px 0;
   font-family:var(--mono);font-size:12.5px;color:var(--slate)}
 .chip{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 6px;
@@ -126,6 +128,7 @@ input[type=range]{width:180px;accent-color:#17395C}
        jest przycisk „i” z opisem sposobu wyliczenia. Dane zostają w tej przeglądarce
        i nigdzie nie są wysyłane.</p>
     <div class="stat" id="stat" hidden></div>
+    <div class="stat" id="ver" style="opacity:.7"></div>
   </div>
 </header>
 
@@ -140,6 +143,7 @@ input[type=range]{width:180px;accent-color:#17395C}
     <div id="files" style="margin-top:12px"></div>
   </label>
 
+  <div id="ver" class="ver" hidden></div>
   <div id="busy" hidden></div>
   <div id="store" hidden></div>
   <div id="err" hidden></div>
@@ -165,12 +169,12 @@ input[type=range]{width:180px;accent-color:#17395C}
         'Sama strona działa, ale logika nie wystartowała — dlatego po wybraniu plików nic się nie dzieje.<br><br>' +
         'Najczęstsza przyczyna: w repozytorium brakuje katalogów <code>lib/</code> i <code>compute/</code>, ' +
         'a pliki leżą luzem w katalogu głównym. Ścieżki muszą wyglądać dokładnie tak:<br>' +
-        '<code>lib/csv.js</code>, <code>lib/db.js</code>, <code>lib/chart.js</code>, <code>compute/index.js</code><br><br>' +
+        '<code>lib/csv.js</code>, <code>lib/db.js</code>, <code>lib/chart.js</code>, <code>compute/metrics.js</code><br><br>' +
         'Sprawdzenie: otwórz <code>lib/csv.js</code> względem adresu tej strony. ' +
         'Jeśli dostaniesz 404, to jest ta przyczyna.</div></div>';
     }, 2500);
   });
 </script>
-<script type="module" src="./app.js"></script>
+<script type="module" src="./app.js?v=7"></script>
 </body>
 </html>

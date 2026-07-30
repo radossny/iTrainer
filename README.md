@@ -38,10 +38,10 @@ docs.js             treści objaśnień pod przyciskami „i”
 lib/csv.js          parser CSV
 lib/db.js           opakowanie IndexedDB, eksport i import kopii
 lib/chart.js        wykresy jako czysty SVG
-compute/index.js    warstwa obliczeniowa — czyste funkcje
+compute/metrics.js    warstwa obliczeniowa — czyste funkcje
 ```
 
-`compute/index.js` jest sercem projektu: nie dotyka DOM ani bazy, więc da się
+`compute/metrics.js` jest sercem projektu: nie dotyka DOM ani bazy, więc da się
 go testować i przenosić niezależnie od reszty.
 
 ## Zasady projektowe

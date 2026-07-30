@@ -1,13 +1,19 @@
-import { parseCsv, detectKind, num } from "./lib/csv.js";
-import * as db from "./lib/db.js";
-import { comboChart, lineChart, stackChart } from "./lib/chart.js";
-import { DOCS } from "./docs.js";
+import { parseCsv, detectKind, num } from "./lib/csv.js?v=7";
+import * as db from "./lib/db.js?v=7";
+import { comboChart, lineChart, stackChart } from "./lib/chart.js?v=7";
+import { DOCS } from "./docs.js?v=7";
 import {
   detectActiveMetrics, parseWorkouts, buildDailyLoad, weeklyLoad, hrrZones,
   baseline, calibrate, paceAtHr, intensitySplit, qualityReport, fmtPace,
-} from "./compute/index.js";
+} from "./compute/metrics.js?v=7";
 
 window.__itrainerBooted = true; // wyłącza ostrzeżenie o niewczytanym kodzie
+
+// Podbij przy każdej zmianie kodu. Pokazuje się w stopce nagłówka, więc od razu
+// widać, czy przeglądarka wykonuje aktualną wersję, czy wersję z cache.
+// JEDNO źródło prawdy o wersji. Musi być zgodne z ?v=N we wszystkich importach
+// oraz w index.html — ten sam plik z różnym ?v= to dwa osobne moduły z osobnym stanem.
+export const VERSION = "7";
 
 const AGE = 41; // do wzoru 220 − wiek; docelowo z profilu użytkownika
 
@@ -15,6 +21,7 @@ const state = {
   daily: [], workouts: [], files: [],
   hrMax: null, hrRest: null,
   band: [145, 160], adjust: true, selMetric: null, openDoc: null,
+  plan: null, planErr: null,
 };
 
 const $ = (s) => document.querySelector(s);
@@ -29,6 +36,17 @@ window.addEventListener("unhandledrejection", (e) =>
   showErr(`Błąd: ${e.reason?.message || e.reason}`));
 
 /* ===== wczytywanie ================================================== */
+
+/** Plan i cel jako dane w repozytorium — do czasu, gdy zacznie je generować model. */
+async function loadPlan() {
+  try {
+    const res = await fetch("./plan.json", { cache: "no-cache" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.plan = await res.json();
+  } catch (e) {
+    state.planErr = e.message;
+  }
+}
 
 async function readFile(file) {
   // file.text() nie istnieje w starszych Safari — stąd zapasowa ścieżka
@@ -214,8 +232,15 @@ function derive() {
   const vitals = state.daily.map((r) => ({
     date: r.date, label: r.date.slice(5),
     rhr: num(r.restingHeartRate), hrv: num(r.heartRateVariabilitySDNN),
+    sleep: num(r.sleepAnalysis),
   }));
+  const matched = state.plan ? matchPlan(state.plan.sessions, state.workouts) : [];
+  const rules = state.plan
+    ? checkRules({ daily, vitals, bases: { rhr: baseline(vitals.map((v) => v.rhr)), hrv: baseline(vitals.map((v) => v.hrv)) }, matched })
+    : [];
+
   return {
+    matched, rules, plan: state.plan,
     metrics, parsed, calib, hrMax, hrRest, zones, weekly, vitals,
     bases: { rhr: baseline(vitals.map((v) => v.rhr)), hrv: baseline(vitals.map((v) => v.hrv)) },
     intensity: intensitySplit(state.workouts, zones),
@@ -247,6 +272,8 @@ const SC = { ok: "#2C6B57", empty: "#C3CBD0", all_zero: "#B23A26", constant: "#9
 const SL = { ok: "aktywna", empty: "pusta", all_zero: "same zera", constant: "stała" };
 
 function render() {
+  $("#ver").innerHTML = `<span>kod ${VERSION}</span>`
+    + (state.plan ? `<span>plan ${esc(state.plan.planVersion)}</span>` : "");
   $("#files").innerHTML = state.files
     .map((f) => `<span class="chip">${esc(f.name)} · ${f.kind} · ${f.n}</span>`).join("");
 
@@ -259,6 +286,7 @@ function render() {
 
   $("#stat").hidden = false;
   $("#stat").innerHTML = [
+    `wersja kodu: ${VERSION}`,
     `dni: ${state.daily.length}`, `treningi: ${state.workouts.length}`,
     `metryki: ${d.metrics.filter((m) => m.isActive).length}/${d.metrics.length}`,
     `HR max: ${d.hrMax}${state.hrMax ? "" : " (proponowane)"}`,
@@ -267,12 +295,147 @@ function render() {
 
   renderStorageNote();
   $("#app").innerHTML = [
+    todayPanel(d), rulesPanel(d), weekPanel(d), planPanel(d),
     calibPanel(d), qualityPanel(d), ledgerPanel(d), loadPanel(d),
     vitalsPanel(d), intensityPanel(d), pacePanel(d), tablePanel(d), backupPanel(),
   ].join("");
 }
 
 /* ---- panele -------------------------------------------------------- */
+
+/* ---- plan ---------------------------------------------------------- */
+
+function sessionSpec(s) {
+  const bits = [];
+  if (s.km) bits.push(`${s.km} km`);
+  if (s.min) bits.push(`${s.min} min`);
+  if (s.hrMax) bits.push(`tętno < ${s.hrMax}`);
+  if (s.hrLo) bits.push(`tętno ${s.hrLo}–${s.hrHi}`);
+  return bits.join(" · ");
+}
+
+function todayPanel(d) {
+  if (state.planErr) return panel({
+    tag: "plan", title: "Nie udało się wczytać planu",
+    body: `<p class="hint">Brak pliku <code>plan.json</code> w katalogu głównym (${esc(state.planErr)}).
+      Pozostałe panele działają normalnie.</p>`,
+  });
+  if (!d.plan) return "";
+
+  const sum = planSummary(d.matched, d.plan.goal);
+  const next = nextSession(d.matched);
+  const g = d.plan.goal;
+
+  const body = next ? `
+    <div class="row" style="gap:26px;align-items:flex-start;margin-bottom:14px">
+      <div>
+        <div class="kpi" style="color:${KIND_COLOR[next.kind]}">${sum.daysToRace}</div>
+        <div class="eyebrow" style="margin-top:3px">dni do startu</div>
+      </div>
+      <div>
+        <div class="kpi">${sum.done}/${sum.total}</div>
+        <div class="eyebrow" style="margin-top:3px">jednostek</div>
+      </div>
+      ${sum.avgCompliance != null ? `<div>
+        <div class="kpi" style="color:${sum.avgCompliance >= 85 ? "var(--ok)" : sum.avgCompliance >= 70 ? "var(--warn)" : "var(--flag)"}">${sum.avgCompliance}%</div>
+        <div class="eyebrow" style="margin-top:3px">zgodność</div></div>` : ""}
+      ${sum.missed ? `<div>
+        <div class="kpi" style="color:var(--flag)">${sum.missed}</div>
+        <div class="eyebrow" style="margin-top:3px">pominięte</div></div>` : ""}
+    </div>
+    <div style="border-left:3px solid ${KIND_COLOR[next.kind]};padding:10px 0 10px 13px">
+      <div class="eyebrow">${next.status === "today" ? "dzisiaj" : esc(next.date)} · ${KIND_LABEL[next.kind]}</div>
+      <div style="font-size:16px;font-weight:600;margin:3px 0 4px">${esc(next.label)}</div>
+      <div class="mono" style="font-size:11.5px;color:var(--slate)">${esc(sessionSpec(next))}</div>
+      ${next.note ? `<p style="font-size:12.5px;color:var(--slate);margin:8px 0 0;line-height:1.5">${esc(next.note)}</p>` : ""}
+    </div>`
+    : `<p class="hint">Plan zrealizowany.</p>`;
+
+  return panel({
+    key: true, tag: "plan", title: esc(g.eventName),
+    right: `cel ${esc(g.target.value)} · A ${esc(g.stretch.value)}`,
+    body,
+  });
+}
+
+function rulesPanel(d) {
+  if (!d.plan || !d.rules.length) return "";
+  return panel({
+    tag: "warstwa 0 · reguły", title: "Sygnały z danych",
+    right: "bez udziału modelu",
+    body: d.rules.map((r) => `<div class="flagrow">
+      <span class="dot" style="background:${COLORS[r.lvl]}"></span>
+      <div><b>${esc(r.t)}</b><span>${esc(r.d)}</span></div></div>`).join(""),
+  });
+}
+
+const STATUS_MARK = {
+  done: ["✓", "var(--ok)"], missed: ["✗", "var(--flag)"],
+  today: ["●", "var(--blue)"], upcoming: ["·", "var(--hair)"],
+};
+
+function weekPanel(d) {
+  if (!d.plan) return "";
+  const week = weekOf(d.matched);
+  if (!week.length) return "";
+  const rows = week.map((s) => {
+    const [mark, color] = STATUS_MARK[s.status];
+    const w = s.workout;
+    return `<tr>
+      <td style="color:${color};font-weight:600">${mark}</td>
+      <td>${esc(s.date.slice(5))}</td>
+      <td style="text-align:left;font-size:11px;color:${KIND_COLOR[s.kind]}">${KIND_LABEL[s.kind]}</td>
+      <td style="text-align:left;font-size:11.5px">${esc(s.label)}</td>
+      <td>${w ? w.duration : "—"}</td>
+      <td>${w?.distance ? w.distance.toFixed(1) : "—"}</td>
+      <td>${w?.avgHr ?? "—"}</td>
+      <td style="color:${s.compliance ? (s.compliance.score >= .85 ? "var(--ok)" : s.compliance.score >= .7 ? "var(--warn)" : "var(--flag)") : "inherit"}">
+        ${s.compliance ? Math.round(s.compliance.score * 100) + "%" : "—"}</td>
+    </tr>${s.compliance?.notes.length ? `<tr><td></td><td colspan="7"
+      style="text-align:left;font-size:11.5px;color:var(--slate);padding-top:0;border-bottom:1px solid #EDF0F1">
+      ${esc(s.compliance.notes.join(" · "))}</td></tr>` : ""}`;
+  }).join("");
+
+  return panel({
+    tag: "plan tygodnia", title: "Zamierzenie kontra wykonanie",
+    body: `<table><thead><tr>
+      <th></th><th>data</th><th style="text-align:left">typ</th>
+      <th style="text-align:left">jednostka</th><th>min</th><th>km</th><th>HR</th><th>zgodn.</th>
+    </tr></thead><tbody>${rows}</tbody></table>`,
+  });
+}
+
+function planPanel(d) {
+  if (!d.plan) return "";
+  const rows = d.matched.map((s) => {
+    const [mark, color] = STATUS_MARK[s.status];
+    return `<tr style="opacity:${s.status === "upcoming" ? .6 : 1}">
+      <td style="color:${color};font-weight:600">${mark}</td>
+      <td>${esc(s.date)}</td>
+      <td style="text-align:left;font-size:11px;color:${KIND_COLOR[s.kind]}">${KIND_LABEL[s.kind]}</td>
+      <td style="text-align:left;font-size:11.5px">${esc(s.label)}</td>
+      <td>${s.workout ? s.workout.duration : "—"}</td>
+      <td>${s.workout?.avgHr ?? "—"}</td>
+      <td>${s.compliance ? Math.round(s.compliance.score * 100) + "%" : "—"}</td></tr>`;
+  }).join("");
+  const rp = d.plan.goal.racePlan.map((r) =>
+    `<tr><td style="text-align:left">km ${esc(r.km)}</td>
+     <td>${r.hrMax ? "≤ " + r.hrMax : "—"}</td>
+     <td style="text-align:left">${esc(r.pace)}</td></tr>`).join("");
+
+  return panel({
+    tag: "plan", title: "Cały cykl", right: `wersja planu ${esc(d.plan.planVersion)}`,
+    body: `<table><thead><tr><th></th><th>data</th><th style="text-align:left">typ</th>
+        <th style="text-align:left">jednostka</th><th>min</th><th>HR</th><th>zgodn.</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      <div class="eyebrow" style="margin:18px 0 6px">taktyka na start</div>
+      <table><thead><tr><th style="text-align:left">odcinek</th><th>tętno</th>
+        <th style="text-align:left">tempo</th></tr></thead><tbody>${rp}</tbody></table>
+      <p class="hint" style="margin-top:14px">${esc(d.plan.goal.hr.note)}</p>`,
+  });
+}
+
+/* ---- kalibracja ---------------------------------------------------- */
 
 function calibPanel(d) {
   const c = d.calib;
@@ -535,6 +698,9 @@ async function doExport() {
 
 /* ===== start ======================================================== */
 
-loadFromDb()
+$("#ver").innerHTML = `<span>kod ${VERSION}</span>`;
+$("#ver").hidden = false;
+
+Promise.all([loadPlan(), loadFromDb()])
   .then(() => { try { render(); } catch (e) { showErr(`Błąd widoku: ${e.message}`); console.error(e); } })
   .catch((e) => showErr(`Nie udało się otworzyć bazy: ${e.message}`));
