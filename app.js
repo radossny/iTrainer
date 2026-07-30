@@ -166,7 +166,11 @@ function showErr(msg) {
 
 /** Ostrzeżenie, gdy baza działa tylko w pamięci — dane znikną po odświeżeniu. */
 function renderStorageNote() {
-  const s = db.status();
+  // Zabezpieczenie przed niezgodnością wersji modułów: gdy lib/db.js jest starszy
+  // i nie eksportuje status(), aplikacja ma działać dalej, a nie się wysypać.
+  const s = typeof db.status === "function"
+    ? db.status()
+    : { mode: "unknown", error: "lib/db.js w starszej wersji — podmień plik" };
   const el = $("#store");
   if (s.mode === "memory") {
     el.hidden = false;
@@ -192,7 +196,7 @@ async function loadFromDb() {
   } catch (e) {
     showErr(`Nie udało się odczytać zapisanych danych: ${e.message}`);
   }
-  renderStorageNote();
+  try { renderStorageNote(); } catch (e) { console.warn("renderStorageNote:", e); }
 }
 
 
