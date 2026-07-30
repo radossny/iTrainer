@@ -1,0 +1,15 @@
+# DANE OSOBOWE — nigdy do repozytorium
+*.csv
+itrainer-*.json
+test/fixtures/
+/dane/
+/data/
+
+# UWAGA: nie wpisuj tu *.json — plan.json MUSI być w repozytorium
+!plan.json
+
+# systemowe
+.DS_Store
+Thumbs.db
+.vscode/
+node_modules/
